@@ -1,51 +1,50 @@
 library(tidyverse)
-# input <- readLines("data/input03.txt") %>%
-#     str_split(",") %>%
-#     imap_dfr(~ tibble(wire = .y,
-#                       value = .x)) %>%
-#     group_by(wire) %>%
-#     mutate(id = row_number()) %>%
-#     ungroup() %>%
-#     select(wire, id, value) %>%
-#     mutate(all_pts = vector("list", nrow(.)),
-#            x = vector("list", nrow(.)),
-#            y = vector("list", nrow(.)))
-scan("data/input03.txt", what = character(), sep = "\n")
-input <- readLines("data/input03.txt") %>%
-    str_split(",")
-add_wire_points <- function(x, y, cmd) {
-    direction <- str_sub(cmd, 1, 1)
-    distance <- str_sub(cmd, 2) %>%
-        as.integer()
-    out_x <- integer(distance)
-    out_y <- integer(distance)
 
-    if (direction == "U") {
-        x <- c(x, rep(x, distance))
-        y <- c(y, seq(y + 1, y + distance))
-    } else if (direction == "D") {
-        x <- c(x, rep(x, distance))
-        y <- c(y, seq(y - 1, y - distance))
-    } else if (direction == "R") {
-        y <- c(y, rep(y, distance))
-        x <- c(x, seq(x + 1, x + distance))
-    } else if (direction == "L") {
-        y <- c(y, rep(y, distance))
-        x <- c(x, seq(x - 1, x - distance))
-    }
+# The most important insight with this was to use tidyr::uncount() to 'expand'
+# each of the commands (e.g. so that R1000 becomes 1000 rows), and then to use
+# cumsum() to track the change in x and y coordinates. After that everything is
+# just a join or two.
+inputs <- readLines("data/input03.txt") %>%
+    str_split(",") %>%
+    imap(~ tibble(wire_id = .y,
+                  cmd = .x) %>%
+             mutate(cmd_id = row_number(),
+                    direction = str_sub(cmd, 1L, 1L)) %>%
+             mutate(len = as.integer(str_sub(cmd, 2L))) %>%
+             uncount(len) %>%
+             mutate(
+                 total_steps = row_number(),
+                 x_chg = case_when(
+                     direction == "R" ~ 1L,
+                     direction == "L" ~ -1L,
+                     TRUE ~ 0L
+                 ),
+                 y_chg = case_when(
+                     direction == "U" ~ 1L,
+                     direction == "D" ~ -1L,
+                     TRUE ~ 0L
+                 )
+             ) %>%
+             mutate(x = cumsum(x_chg),
+                    y = cumsum(y_chg)) %>%
+             mutate(distance = abs(x) + abs(y)))
 
-    list(x = x,
-         y = y)
-}
+# Now split the list into the first and second wires
+wire01 <- inputs[[1]]
+wire02 <- inputs[[2]]
 
+# Part 1: what is the shortest Manhattan distance from an intersection to the
+# origin?
+wire01 %>%
+    inner_join(wire02,
+               by = c("x", "y")) %>%
+    top_n(1, -distance.x) %>%
+    pull(distance.x)
 
-add_wire_points(0, 0, input[[1]][[1]])
-
-# input[input$id == 1, ] <- list(0)
-#
-# for (wire in c(1, 2)) {
-#     for (id in seq_len(max(input$id))) {
-#         input
-#     }
-# }
-#
+# Part 2: which intersection happens after the fewest steps?
+wire01 %>%
+    inner_join(wire02,
+               by = c("x", "y")) %>%
+    mutate(total_steps = total_steps.x + total_steps.y) %>%
+    top_n(1, -total_steps) %>%
+    pull(total_steps)
